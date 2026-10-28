@@ -9,7 +9,7 @@ Two modes:
            bodies are ignored, so `auto` inside // comments or "..." strings
            never triggers.
   rewrite  Replace `auto` with the concrete type reported by Clang's AST,
-           using libclang (pip: clang or libclang) plus compile_commands.json.
+           using libclang (from pixi) plus compile_commands.json.
            Conservative: leaves a declaration unchanged when the type is
            ambiguous (range-for over template parameters, undeducible, etc.)
            and never emits a broken type.
@@ -204,7 +204,7 @@ def rewrite_file(path: str, ccfile: str | None) -> int:
     try:
         import clang.cindex as ci
     except ImportError:
-        print(f"  rewrite requires libclang (`pip install libclang`); leaving {path} unchanged",
+        print(f"  rewrite requires libclang (add libclang in pixi.toml); leaving {path} unchanged",
               file=sys.stderr)
         return 0
     args = build_args(path, ccfile)

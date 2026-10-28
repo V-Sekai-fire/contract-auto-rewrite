@@ -1,7 +1,7 @@
 # A standalone C++ `auto` gate.
 
 # The `check` mode (used by the CI gate) is stdlib-only, so it needs no native
-# packages. `libclang` (the pip `libclang` binding) is required only by the
+# packages. `libclang` (the pypi libclang binding) is required only by the
 # local `rewrite` mode: it provides `clang.cindex` and self-bundles its native
 # library, so no conda native `libclang` is needed alongside it. It is pinned to
 # 18.x to match the locally-verified binding.
