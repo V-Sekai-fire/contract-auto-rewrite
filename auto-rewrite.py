@@ -233,25 +233,44 @@ def rewrite_file(path: str, ccfile: str | None) -> int:
             spelling = str(cur.type.spelling)
             if not is_concrete_type(spelling):
                 continue
-            # find the `auto` token immediately left of the name
-            p = col - 1
-            while p >= 0 and line[p:p + 4] != "auto":
-                p -= 1
-            if p < 0:
+            name_start = col - 1  # the name begins at col - 1 (verified: col is one
+            # past the first character of the declarator, e.g. `auto* pp` has name
+            # `pp` starting at col - 1 and `*`/space between auto and it).
+            # Find the rightmost `auto` token immediately before the name, across
+            # the pointer/reference suffix and whitespace (`auto* pp`, `auto& r`).
+            idx = name_start - 1
+            while idx >= 0 and line[idx] in " \t*/&":
+                idx -= 1
+            if idx < 3 or line[idx - 3:idx + 1] != "auto":
                 continue
-            # extend left across the run of const/volatile (word tokens)
-            l = p
-            q = l - 1
-            while q >= 0 and line[q - 3:q + 1] in {"const", "volatile"} and (q < 0 or not line[q - 1].isalnum()):
-                l = q
-                q -= 1
-            # extend right across suffix (space, *, &) up to the name
-            e = p + 4
-            while e < col and line[e] in " \t*/&":
-                e += 1
-            # if e is still an identifier start (the name), we're fine; if line[e]
-            # is the name char we stop before it. e may be at the name start.
-            edits.append((ln - 1, l, e, spelling))
+            a_start = idx - 3  # first char of the `auto` keyword
+            # Walk left across the const/volatile modifier run, e.g. `const volatile auto x`.
+            l = a_start
+            q = a_start - 1
+            while q >= 0:
+                while q >= 0 and line[q] in " \t":
+                    q -= 1
+                if q < 0:
+                    break
+                r = q
+                while r >= 0 and line[r].isalnum():
+                    r -= 1
+                word = line[r + 1:q + 1]
+                if word in {"const", "volatile"}:
+                    l = r + 1
+                    q = r - 1
+                else:
+                    break
+            # Replace [l : name_start] with the concrete type. Clang's spelling
+            # already carries any const/volatile qualifiers and any pointer/
+            # reference suffix (`const int *`, `int &`, `volatile int`). The
+            # separator between the declarator and the identifier is inside the
+            # replaced region; keep one space only when the original line had
+            # whitespace right before the identifier.
+            replacement = spelling
+            if line[name_start - 1] in " \t":
+                replacement += " "
+            edits.append((ln - 1, l, name_start, replacement))
         except Exception:
             continue
     if not edits:
