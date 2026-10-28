@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# This gate fails the check run. It never warns and never rewrites: CI performs
+# a fail-only `auto` check. Nothing here commits changes.
+#
+# WHAT CI CANNOT CHECK, NAMED RATHER THAN OMITTED. The check runs on the changed
+# C++ files of a pull request (and merge group) — the same files a reviewer sees.
+# It has no workspace or compile database, but it does not need one: the gate is
+# a dependency-free, stdlib-only token scan (`auto-rewrite.py check`). There is
+# no parse, no SDK, no compile_commands.json to fetch. A silent skip reads
+# exactly like a pass, so the self-test below proves the gate still rejects
+# auto, before the real check reads any file.
+
+name: auto-gate
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  auto-check:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Controls first. A check whose controls have not run yet is a check no
+      # one has reason to believe, so the self-test precedes the real check. It
+      # is stdlib-only; nothing to install.
+      - name: negative controls
+        run: python auto-rewrite.py self-test
+      # The actual gate. On a pull request (and merge group) this checks only the
+      # changed C++ files — the same text a reviewer sees — against the base ref.
+      # It lists them in one file and passes that file to `check`, which fails on
+      # any standalone `auto`. No compile database, no SDK: the gate is a
+      # dependency-free token scan.
+      #
+      # Safety note: the `BASE`/`HEAD` values are git refs (branch names), not
+      # user prose or commands. They are used exactly as in this org's gates.yml
+      # (`"origin/${{ github.base_ref }}"`), quoted in double quotes around the
+      # diff. Refs cannot carry shell metacharacters that would inject commands;
+      # they are validated by git, and quoted so any spaces or `$` in a ref are
+      # treated literally.
+      - name: changed C++ files carry no `auto`
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: |
+          BASE=${{ github.event.pull_request.base_ref }}
+          HEAD=${{ github.event.pull_request.head_ref }}
+          git diff --name-only --unified=0 -- \
+            -- '*.cpp' '*.cc' '*.cxx' '*.h' '*.hpp' \
+            "origin/${BASE}...origin/${HEAD}" > "${RUNNER_TEMP}/changed-cpp.txt"
+          python auto-rewrite.py check --changed-file "${RUNNER_TEMP}/changed-cpp.txt"
